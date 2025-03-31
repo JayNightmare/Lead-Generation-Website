@@ -35,18 +35,28 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-      await signUp(email, password, name);
+      // First create the user in Firebase
+      const firebaseUser = await signUp(email, password, name);
       
-      // After signup, create user profile with company name
-      // This would typically call your backend API
-      // const response = await fetch('/api/users/profile', {
-      //   method: 'POST',
-      //   headers: {
-      //     'Content-Type': 'application/json',
-      //   },
-      //   body: JSON.stringify({ companyName }),
-      // });
-      
+      // Then create the user in our backend
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${await firebaseUser.getIdToken()}`
+        },
+        body: JSON.stringify({
+          email,
+          password,
+          name
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to create account');
+      }
+
       router.push('/dashboard');
     } catch (error: any) {
       console.error('Signup error:', error);
