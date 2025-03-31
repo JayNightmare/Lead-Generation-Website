@@ -1,66 +1,84 @@
-module.exports = (sequelize, DataTypes) => {
-  const Company = sequelize.define('Company', {
-    id: {
-      type: DataTypes.INTEGER,
-      primaryKey: true,
-      autoIncrement: true,
-    },
-    name: {
-      type: DataTypes.STRING,
-      allowNull: false,
-    },
-    website: {
-      type: DataTypes.STRING,
-    },
-    logo: {
-      type: DataTypes.STRING,
-    },
-    description: {
-      type: DataTypes.TEXT,
-    },
-    industry: {
-      type: DataTypes.STRING,
-    },
-    sector: {
-      type: DataTypes.STRING,
-    },
-    companySize: {
-      type: DataTypes.ENUM('Startup', 'SMB', 'Mid-size', 'Enterprise'),
-    },
-    founded: {
-      type: DataTypes.INTEGER,
-    },
-    headquarters: {
-      type: DataTypes.STRING,
-    },
-    country: {
-      type: DataTypes.STRING,
-    },
-    state: {
-      type: DataTypes.STRING,
-    },
-    city: {
-      type: DataTypes.STRING,
-    },
-    isHiring: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: false,
-    },
-    usesRecruitmentAgency: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: false,
-    },
-    linkedInUrl: {
-      type: DataTypes.STRING,
-    },
-    careersPageUrl: {
-      type: DataTypes.STRING,
-    },
-    lastUpdated: {
-      type: DataTypes.DATE,
-      defaultValue: DataTypes.NOW,
-    },
-  });
+const mongoose = require('mongoose');
 
-  return Company;
-}; 
+const companySchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  website: {
+    type: String,
+    trim: true
+  },
+  logo: {
+    type: String,
+    trim: true
+  },
+  description: {
+    type: String,
+    trim: true
+  },
+  industry: {
+    type: String,
+    trim: true
+  },
+  sector: {
+    type: String,
+    trim: true
+  },
+  companySize: {
+    type: String,
+    enum: ['Startup', 'SMB', 'Mid-size', 'Enterprise']
+  },
+  founded: {
+    type: Number
+  },
+  headquarters: {
+    type: String,
+    trim: true
+  },
+  country: {
+    type: String,
+    trim: true
+  },
+  state: {
+    type: String,
+    trim: true
+  },
+  city: {
+    type: String,
+    trim: true
+  },
+  isHiring: {
+    type: Boolean,
+    default: false
+  },
+  usesRecruitmentAgency: {
+    type: Boolean,
+    default: false
+  },
+  linkedInUrl: {
+    type: String,
+    trim: true
+  },
+  careersPageUrl: {
+    type: String,
+    trim: true
+  },
+  lastUpdated: {
+    type: Date,
+    default: Date.now
+  }
+}, {
+  timestamps: true
+});
+
+// Indexes for better query performance
+companySchema.index({ name: 1 });
+companySchema.index({ industry: 1 });
+companySchema.index({ sector: 1 });
+companySchema.index({ isHiring: 1 });
+
+const Company = mongoose.model('Company', companySchema);
+
+module.exports = Company; 

@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const { sequelize } = require('./models');
+const connectDB = require('./config/database');
 
 // Import routes
 const companyRoutes = require('./routes/company.routes');
@@ -44,9 +44,8 @@ app.use((err, req, res, next) => {
 // Start server
 async function startServer() {
   try {
-    // Sync database models
-    await sequelize.sync();
-    console.log('Database connected and models synced');
+    // Connect to MongoDB
+    await connectDB();
 
     // Start Express server
     app.listen(PORT, () => {

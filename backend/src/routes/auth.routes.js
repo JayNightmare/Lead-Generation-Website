@@ -15,8 +15,8 @@ router.get('/me', authMiddleware.verifyToken, authController.getCurrentUser);
 // Update user profile
 router.put('/profile', authMiddleware.verifyToken, authController.updateProfile);
 
-// Change password
-router.put('/change-password', authMiddleware.verifyToken, authController.changePassword);
+// Update password
+router.put('/change-password', authMiddleware.verifyToken, authController.updatePassword);
 
 // Request password reset
 router.post('/forgot-password', authController.forgotPassword);

@@ -2,33 +2,19 @@ const admin = require('firebase-admin');
 const { User } = require('../models');
 
 // Initialize Firebase Admin with environment variables
-// In a real app, you'd use service account credentials from environment variables
 const initializeFirebase = () => {
   try {
     // Check if Firebase is already initialized
     if (admin.apps.length === 0) {
-      // For development environment, we can use the following approach
-      if (process.env.NODE_ENV === 'development' && !process.env.FIREBASE_SERVICE_ACCOUNT) {
-        admin.initializeApp({
-          projectId: process.env.FIREBASE_PROJECT_ID || 'lead-gen-platform',
-        });
-        console.log('Firebase initialized in development mode');
-        return;
-      }
-      
-      // For production, use service account credentials
-      let serviceAccount;
-      
-      try {
-        serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-      } catch (error) {
-        console.error('Error parsing Firebase service account JSON:', error);
-        throw new Error('Invalid Firebase configuration');
-      }
+      const serviceAccount = {
+        type: "service_account",
+        project_id: process.env.FIREBASE_PROJECT_ID,
+        private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        client_email: process.env.FIREBASE_CLIENT_EMAIL,
+      };
       
       admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        databaseURL: process.env.FIREBASE_DATABASE_URL
+        credential: admin.credential.cert(serviceAccount)
       });
       
       console.log('Firebase Admin SDK initialized successfully');
@@ -38,6 +24,9 @@ const initializeFirebase = () => {
     throw error;
   }
 };
+
+// Initialize Firebase
+initializeFirebase();
 
 // Create a user in Firebase Authentication
 const createFirebaseUser = async (email, password, displayName) => {
@@ -56,10 +45,21 @@ const createFirebaseUser = async (email, password, displayName) => {
   }
 };
 
-// Verify ID token
-const verifyIdToken = async (idToken) => {
+// Update a user in Firebase Authentication
+const updateFirebaseUser = async (uid, updateData) => {
   try {
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const userRecord = await admin.auth().updateUser(uid, updateData);
+    return userRecord;
+  } catch (error) {
+    console.error('Error updating Firebase user:', error);
+    throw error;
+  }
+};
+
+// Verify ID token
+const verifyIdToken = async (idToken, checkRevoked = false) => {
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken, checkRevoked);
     return decodedToken;
   } catch (error) {
     console.error('Error verifying ID token:', error);
@@ -71,7 +71,7 @@ const verifyIdToken = async (idToken) => {
 const getUserByFirebaseUid = async (firebaseUid) => {
   try {
     // First check our database
-    const user = await User.findOne({ where: { firebaseUid } });
+    const user = await User.findOne({ firebaseUid });
     
     if (user) {
       return user;
@@ -88,8 +88,7 @@ const getUserByFirebaseUid = async (firebaseUid) => {
     return User.create({
       firebaseUid,
       email: firebaseUser.email,
-      firstName: firebaseUser.displayName ? firebaseUser.displayName.split(' ')[0] : '',
-      lastName: firebaseUser.displayName ? firebaseUser.displayName.split(' ').slice(1).join(' ') : '',
+      name: firebaseUser.displayName || '',
       role: 'user',
       lastLogin: new Date()
     });
@@ -100,12 +99,34 @@ const getUserByFirebaseUid = async (firebaseUid) => {
   }
 };
 
-// Update a user in Firebase
-const updateFirebaseUser = async (uid, updates) => {
+// Generate password reset link
+const generatePasswordResetLink = async (email) => {
   try {
-    return await admin.auth().updateUser(uid, updates);
+    const link = await admin.auth().generatePasswordResetLink(email);
+    return link;
   } catch (error) {
-    console.error('Error updating Firebase user:', error);
+    console.error('Error generating password reset link:', error);
+    throw error;
+  }
+};
+
+// Confirm password reset
+const confirmPasswordReset = async (oobCode, newPassword) => {
+  try {
+    await admin.auth().confirmPasswordReset(oobCode, newPassword);
+  } catch (error) {
+    console.error('Error confirming password reset:', error);
+    throw error;
+  }
+};
+
+// Create custom token
+const createCustomToken = async (uid) => {
+  try {
+    const token = await admin.auth().createCustomToken(uid);
+    return token;
+  } catch (error) {
+    console.error('Error creating custom token:', error);
     throw error;
   }
 };
@@ -133,13 +154,14 @@ const sendPasswordResetEmail = async (email) => {
   }
 };
 
-// Export the Firebase service functions
 module.exports = {
-  initializeFirebase,
   createFirebaseUser,
+  updateFirebaseUser,
   verifyIdToken,
   getUserByFirebaseUid,
-  updateFirebaseUser,
+  generatePasswordResetLink,
+  confirmPasswordReset,
+  createCustomToken,
   deleteFirebaseUser,
   sendPasswordResetEmail
 }; 

@@ -1,23 +1,28 @@
-module.exports = (sequelize, DataTypes) => {
-  const Role = sequelize.define('Role', {
-    id: {
-      type: DataTypes.INTEGER,
-      primaryKey: true,
-      autoIncrement: true,
-    },
-    name: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      unique: true,
-    },
-    description: {
-      type: DataTypes.STRING,
-    },
-    permissions: {
-      type: DataTypes.JSONB,
-      defaultValue: {},
-    },
-  });
+const mongoose = require('mongoose');
 
-  return Role;
-}; 
+const roleSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true
+  },
+  description: {
+    type: String,
+    trim: true
+  },
+  permissions: {
+    type: Map,
+    of: mongoose.Schema.Types.Mixed,
+    default: {}
+  }
+}, {
+  timestamps: true
+});
+
+// Indexes for better query performance
+roleSchema.index({ name: 1 });
+
+const Role = mongoose.model('Role', roleSchema);
+
+module.exports = Role; 

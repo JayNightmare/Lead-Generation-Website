@@ -1,4 +1,3 @@
-const { Op } = require('sequelize');
 const { 
   Company,
   JobPosting,
@@ -22,63 +21,64 @@ const getCompanies = async (req, res) => {
       page = 1,
       limit = 10,
       sortBy = 'name',
-      sortOrder = 'ASC'
+      sortOrder = 'asc'
     } = req.query;
 
     // Build filter conditions
-    const whereConditions = {};
+    const query = {};
     
     if (search) {
-      whereConditions.name = { [Op.iLike]: `%${search}%` };
+      query.name = { $regex: search, $options: 'i' };
     }
     
     if (industry) {
-      whereConditions.industry = { [Op.iLike]: `%${industry}%` };
+      query.industry = { $regex: industry, $options: 'i' };
     }
     
     if (sector) {
-      whereConditions.sector = { [Op.iLike]: `%${sector}%` };
+      query.sector = { $regex: sector, $options: 'i' };
     }
     
     if (country) {
-      whereConditions.country = { [Op.iLike]: `%${country}%` };
+      query.country = { $regex: country, $options: 'i' };
     }
     
     if (state) {
-      whereConditions.state = { [Op.iLike]: `%${state}%` };
+      query.state = { $regex: state, $options: 'i' };
     }
     
     if (city) {
-      whereConditions.city = { [Op.iLike]: `%${city}%` };
+      query.city = { $regex: city, $options: 'i' };
     }
     
     if (companySize) {
-      whereConditions.companySize = companySize;
+      query.companySize = companySize;
     }
     
     if (isHiring !== undefined) {
-      whereConditions.isHiring = isHiring === 'true';
+      query.isHiring = isHiring === 'true';
     }
     
     if (usesRecruitmentAgency !== undefined) {
-      whereConditions.usesRecruitmentAgency = usesRecruitmentAgency === 'true';
+      query.usesRecruitmentAgency = usesRecruitmentAgency === 'true';
     }
 
     // Calculate pagination
-    const offset = (page - 1) * limit;
+    const skip = (page - 1) * limit;
     
     // Get companies with optional filters
-    const { count, rows: companies } = await Company.findAndCountAll({
-      where: whereConditions,
-      limit,
-      offset,
-      order: [[sortBy, sortOrder]]
-    });
+    const [companies, total] = await Promise.all([
+      Company.find(query)
+        .sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 })
+        .skip(skip)
+        .limit(limit),
+      Company.countDocuments(query)
+    ]);
 
     // Return paginated results
     return res.json({
-      total: count,
-      totalPages: Math.ceil(count / limit),
+      total,
+      totalPages: Math.ceil(total / limit),
       currentPage: parseInt(page),
       companies
     });
@@ -97,17 +97,18 @@ const getCompanyById = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const company = await Company.findByPk(id, {
-      include: [
-        { model: JobPosting, limit: 5 },
-        { 
-          model: ContactPerson,
-          where: { isDecisionMaker: true },
-          required: false,
-          limit: 5
-        }
-      ]
-    });
+    const company = await Company.findById(id)
+      .populate({
+        path: 'jobPostings',
+        model: 'JobPosting',
+        options: { limit: 5 }
+      })
+      .populate({
+        path: 'contactPersons',
+        model: 'ContactPerson',
+        match: { isDecisionMaker: true },
+        options: { limit: 5 }
+      });
     
     if (!company) {
       return res.status(404).json({
@@ -132,7 +133,7 @@ const getCompanyJobs = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const company = await Company.findByPk(id);
+    const company = await Company.findById(id);
     
     if (!company) {
       return res.status(404).json({
@@ -141,10 +142,8 @@ const getCompanyJobs = async (req, res) => {
       });
     }
     
-    const jobs = await JobPosting.findAll({
-      where: { CompanyId: id },
-      order: [['postedDate', 'DESC']]
-    });
+    const jobs = await JobPosting.find({ company: id })
+      .sort({ postedDate: -1 });
     
     return res.json(jobs);
     
@@ -162,7 +161,7 @@ const getCompanyContacts = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const company = await Company.findByPk(id);
+    const company = await Company.findById(id);
     
     if (!company) {
       return res.status(404).json({
@@ -171,10 +170,8 @@ const getCompanyContacts = async (req, res) => {
       });
     }
     
-    const contacts = await ContactPerson.findAll({
-      where: { CompanyId: id },
-      order: [['isDecisionMaker', 'DESC']]
-    });
+    const contacts = await ContactPerson.find({ company: id })
+      .sort({ isDecisionMaker: -1 });
     
     return res.json(contacts);
     
@@ -211,7 +208,11 @@ const updateCompany = async (req, res) => {
     const { id } = req.params;
     const companyData = req.body;
     
-    const company = await Company.findByPk(id);
+    const company = await Company.findByIdAndUpdate(
+      id,
+      companyData,
+      { new: true, runValidators: true }
+    );
     
     if (!company) {
       return res.status(404).json({
@@ -219,8 +220,6 @@ const updateCompany = async (req, res) => {
         message: 'Company not found'
       });
     }
-    
-    await company.update(companyData);
     
     return res.json(company);
     
@@ -238,7 +237,7 @@ const deleteCompany = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const company = await Company.findByPk(id);
+    const company = await Company.findByIdAndDelete(id);
     
     if (!company) {
       return res.status(404).json({
@@ -247,8 +246,12 @@ const deleteCompany = async (req, res) => {
       });
     }
     
-    await company.destroy();
-    
+    // Delete associated jobs and contacts
+    await Promise.all([
+      JobPosting.deleteMany({ company: id }),
+      ContactPerson.deleteMany({ company: id }),
+    ]);
+
     return res.json({
       message: 'Company deleted successfully'
     });
@@ -262,12 +265,12 @@ const deleteCompany = async (req, res) => {
   }
 };
 
-// Refresh company data from external sources
+// Refresh company data from scraping service
 const refreshCompanyData = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const company = await Company.findByPk(id);
+    const company = await Company.findById(id);
     
     if (!company) {
       return res.status(404).json({
@@ -276,21 +279,9 @@ const refreshCompanyData = async (req, res) => {
       });
     }
     
-    // Scrape new job postings
-    if (company.careersPageUrl) {
-      await scrapingService.scrapeJobs(company);
-    }
-    
-    // Scrape LinkedIn for contacts
-    if (company.linkedInUrl) {
-      await scrapingService.scrapeContacts(company);
-    }
-    
-    // Update company status
-    await company.update({
-      lastUpdated: new Date(),
-      isHiring: await JobPosting.count({ where: { CompanyId: id, isActive: true } }) > 0
-    });
+    // Update company data from scraping service
+    const updatedData = await scrapingService.scrapeCompanyData(company.website);
+    await company.updateOne(updatedData);
     
     return res.json({
       message: 'Company data refreshed successfully',

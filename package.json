@@ -24,6 +24,9 @@
   },
   "dependencies": {
     "firebase": "^11.5.0",
-    "lead-gen-app": "file:"
+    "json2csv": "^6.0.0-alpha.2",
+    "lead-gen-app": "file:",
+    "mongodb": "^6.15.0",
+    "mongoose": "^8.13.1"
   }
 }

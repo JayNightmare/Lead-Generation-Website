@@ -1,4 +1,3 @@
-const { Op } = require('sequelize');
 const { Lead, Company, User } = require('../models');
 const fs = require('fs');
 const { Parser } = require('json2csv');
@@ -15,53 +14,47 @@ const getLeads = async (req, res) => {
       page = 1,
       limit = 10,
       sortBy = 'createdAt',
-      sortOrder = 'DESC'
+      sortOrder = 'desc'
     } = req.query;
 
     // Build filter conditions
-    const whereConditions = { UserId: userId };
+    const query = { assignedTo: userId };
     
     if (status) {
-      whereConditions.status = status;
+      query.status = status;
     }
     
     if (priority) {
-      whereConditions.priority = priority;
+      query.priority = priority;
     }
     
     if (tag) {
-      whereConditions.tags = { [Op.contains]: [tag] };
+      query.tags = tag;
     }
     
     // Include company search
-    const include = [{
-      model: Company,
-      required: true,
-    }];
-    
-    if (search) {
-      include[0].where = {
-        name: { [Op.iLike]: `%${search}%` }
-      };
-    }
+    const populateOptions = {
+      path: 'company',
+      match: search ? { name: { $regex: search, $options: 'i' } } : {}
+    };
 
     // Calculate pagination
-    const offset = (page - 1) * limit;
+    const skip = (page - 1) * limit;
     
     // Get leads with optional filters
-    const { count, rows: leads } = await Lead.findAndCountAll({
-      where: whereConditions,
-      include,
-      limit,
-      offset,
-      order: [[sortBy, sortOrder]],
-      distinct: true
-    });
+    const [leads, total] = await Promise.all([
+      Lead.find(query)
+        .populate(populateOptions)
+        .sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 })
+        .skip(skip)
+        .limit(limit),
+      Lead.countDocuments(query)
+    ]);
 
     // Return paginated results
     return res.json({
-      total: count,
-      totalPages: Math.ceil(count / limit),
+      total,
+      totalPages: Math.ceil(total / limit),
       currentPage: parseInt(page),
       leads
     });
@@ -82,12 +75,9 @@ const getLeadById = async (req, res) => {
     const userId = req.user.id;
     
     const lead = await Lead.findOne({
-      where: {
-        id,
-        UserId: userId
-      },
-      include: [{ model: Company }]
-    });
+      _id: id,
+      assignedTo: userId
+    }).populate('company');
     
     if (!lead) {
       return res.status(404).json({
@@ -114,7 +104,7 @@ const createLead = async (req, res) => {
     const userId = req.user.id;
     
     // Check if company exists
-    const company = await Company.findByPk(companyId);
+    const company = await Company.findById(companyId);
     
     if (!company) {
       return res.status(404).json({
@@ -126,14 +116,13 @@ const createLead = async (req, res) => {
     // Create the lead
     const newLead = await Lead.create({
       ...leadData,
-      UserId: userId,
-      CompanyId: companyId
+      assignedTo: userId,
+      company: companyId
     });
     
     // Return the lead with company data
-    const leadWithCompany = await Lead.findByPk(newLead.id, {
-      include: [{ model: Company }]
-    });
+    const leadWithCompany = await Lead.findById(newLead._id)
+      .populate('company');
     
     return res.status(201).json(leadWithCompany);
     
@@ -154,12 +143,11 @@ const updateLead = async (req, res) => {
     const userId = req.user.id;
     
     // Find lead and ensure it belongs to user
-    const lead = await Lead.findOne({
-      where: {
-        id,
-        UserId: userId
-      }
-    });
+    const lead = await Lead.findOneAndUpdate(
+      { _id: id, assignedTo: userId },
+      leadData,
+      { new: true, runValidators: true }
+    ).populate('company');
     
     if (!lead) {
       return res.status(404).json({
@@ -168,15 +156,7 @@ const updateLead = async (req, res) => {
       });
     }
     
-    // Update the lead
-    await lead.update(leadData);
-    
-    // Return updated lead with company data
-    const updatedLead = await Lead.findByPk(id, {
-      include: [{ model: Company }]
-    });
-    
-    return res.json(updatedLead);
+    return res.json(lead);
     
   } catch (error) {
     console.error('Error updating lead:', error);
@@ -194,11 +174,9 @@ const deleteLead = async (req, res) => {
     const userId = req.user.id;
     
     // Find lead and ensure it belongs to user
-    const lead = await Lead.findOne({
-      where: {
-        id,
-        UserId: userId
-      }
+    const lead = await Lead.findOneAndDelete({
+      _id: id,
+      assignedTo: userId
     });
     
     if (!lead) {
@@ -207,9 +185,6 @@ const deleteLead = async (req, res) => {
         message: 'Lead not found'
       });
     }
-    
-    // Delete the lead
-    await lead.destroy();
     
     return res.json({
       message: 'Lead deleted successfully'
@@ -231,53 +206,43 @@ const exportLeadsToCSV = async (req, res) => {
     const { status, priority } = req.query;
     
     // Build filter conditions
-    const whereConditions = { UserId: userId };
+    const query = { assignedTo: userId };
     
     if (status) {
-      whereConditions.status = status;
+      query.status = status;
     }
     
     if (priority) {
-      whereConditions.priority = priority;
+      query.priority = priority;
     }
     
     // Get all leads for export
-    const leads = await Lead.findAll({
-      where: whereConditions,
-      include: [{ model: Company }],
-      order: [['createdAt', 'DESC']]
-    });
+    const leads = await Lead.find(query)
+      .populate('company')
+      .sort({ createdAt: -1 });
     
-    // Format data for CSV
-    const leadsForExport = leads.map(lead => {
-      const company = lead.Company;
-      return {
-        'Lead ID': lead.id,
-        'Company': company.name,
-        'Status': lead.status,
-        'Priority': lead.priority,
-        'Notes': lead.notes,
-        'Tags': lead.tags.join(', '),
-        'Follow-up Date': lead.followUpDate ? new Date(lead.followUpDate).toLocaleDateString() : '',
-        'Industry': company.industry,
-        'Sector': company.sector,
-        'Size': company.companySize,
-        'Country': company.country,
-        'Website': company.website,
-        'Is Hiring': company.isHiring ? 'Yes' : 'No',
-        'Created At': new Date(lead.createdAt).toLocaleDateString()
-      };
-    });
+    // Transform leads for CSV
+    const csvData = leads.map(lead => ({
+      id: lead._id,
+      status: lead.status,
+      priority: lead.priority,
+      companyName: lead.company?.name || '',
+      notes: lead.notes || '',
+      tags: lead.tags.join(', '),
+      followUpDate: lead.followUpDate || '',
+      createdAt: lead.createdAt,
+      updatedAt: lead.updatedAt
+    }));
     
-    // Convert to CSV
-    const fields = Object.keys(leadsForExport[0] || {});
-    const json2csvParser = new Parser({ fields });
-    const csv = json2csvParser.parse(leadsForExport);
+    // Generate CSV
+    const parser = new Parser();
+    const csv = parser.parse(csvData);
     
-    // Set headers for download
-    res.header('Content-Type', 'text/csv');
-    res.attachment(`leads-export-${Date.now()}.csv`);
+    // Set response headers
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=leads.csv');
     
+    // Send CSV file
     return res.send(csv);
     
   } catch (error) {
@@ -294,56 +259,40 @@ const getLeadStats = async (req, res) => {
   try {
     const userId = req.user.id;
     
-    // Count leads by status
-    const statusCounts = await Lead.findAll({
-      attributes: [
-        'status',
-        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-      ],
-      where: { UserId: userId },
-      group: ['status']
-    });
+    // Get counts by status
+    const statusCounts = await Lead.aggregate([
+      { $match: { assignedTo: userId } },
+      { $group: { _id: '$status', count: { $sum: 1 } } }
+    ]);
     
-    // Count leads by priority
-    const priorityCounts = await Lead.findAll({
-      attributes: [
-        'priority',
-        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-      ],
-      where: { UserId: userId },
-      group: ['priority']
-    });
+    // Get counts by priority
+    const priorityCounts = await Lead.aggregate([
+      { $match: { assignedTo: userId } },
+      { $group: { _id: '$priority', count: { $sum: 1 } } }
+    ]);
     
-    // Get recent leads
-    const recentLeads = await Lead.findAll({
-      where: { UserId: userId },
-      include: [{ model: Company, attributes: ['name', 'industry', 'sector'] }],
-      order: [['createdAt', 'DESC']],
-      limit: 5
-    });
+    // Get counts by company
+    const companyCounts = await Lead.aggregate([
+      { $match: { assignedTo: userId } },
+      { $group: { _id: '$company', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 5 }
+    ]);
     
-    // Count leads by company industry
-    const industryStats = await Lead.findAll({
-      attributes: [
-        [sequelize.col('Company.industry'), 'industry'],
-        [sequelize.fn('COUNT', sequelize.col('Lead.id')), 'count']
-      ],
-      include: [{
-        model: Company,
-        attributes: []
-      }],
-      where: { UserId: userId },
-      group: [sequelize.col('Company.industry')],
-      order: [[sequelize.literal('count'), 'DESC']],
-      raw: true
-    });
+    // Populate company names
+    const companyIds = companyCounts.map(c => c._id);
+    const companies = await Company.find({ _id: { $in: companyIds } });
+    const companyMap = new Map(companies.map(c => [c._id.toString(), c.name]));
+    
+    const companyStats = companyCounts.map(c => ({
+      name: companyMap.get(c._id.toString()) || 'Unknown',
+      count: c.count
+    }));
     
     return res.json({
       statusCounts,
       priorityCounts,
-      recentLeads,
-      industryStats,
-      totalLeads: await Lead.count({ where: { UserId: userId } })
+      companyStats
     });
     
   } catch (error) {
@@ -361,26 +310,14 @@ const bulkUpdateLeadStatus = async (req, res) => {
     const { leadIds, status } = req.body;
     const userId = req.user.id;
     
-    if (!leadIds || !Array.isArray(leadIds) || !status) {
-      return res.status(400).json({
-        error: true,
-        message: 'Invalid request. leadIds array and status are required.'
-      });
-    }
-    
-    // Update leads that belong to user
-    const result = await Lead.update(
-      { status },
-      {
-        where: {
-          id: { [Op.in]: leadIds },
-          UserId: userId
-        }
-      }
+    const result = await Lead.updateMany(
+      { _id: { $in: leadIds }, assignedTo: userId },
+      { $set: { status } }
     );
     
     return res.json({
-      message: `${result[0]} leads updated successfully`
+      message: `Updated ${result.modifiedCount} leads`,
+      modifiedCount: result.modifiedCount
     });
     
   } catch (error) {
@@ -398,23 +335,14 @@ const bulkDeleteLeads = async (req, res) => {
     const { leadIds } = req.body;
     const userId = req.user.id;
     
-    if (!leadIds || !Array.isArray(leadIds)) {
-      return res.status(400).json({
-        error: true,
-        message: 'Invalid request. leadIds array is required.'
-      });
-    }
-    
-    // Delete leads that belong to user
-    const result = await Lead.destroy({
-      where: {
-        id: { [Op.in]: leadIds },
-        UserId: userId
-      }
+    const result = await Lead.deleteMany({
+      _id: { $in: leadIds },
+      assignedTo: userId
     });
     
     return res.json({
-      message: `${result} leads deleted successfully`
+      message: `Deleted ${result.deletedCount} leads`,
+      deletedCount: result.deletedCount
     });
     
   } catch (error) {
