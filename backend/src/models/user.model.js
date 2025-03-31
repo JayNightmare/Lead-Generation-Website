@@ -12,7 +12,7 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     required: true,
-    minlength: 6
+    minlength: 8
   },
   name: {
     type: String,
@@ -23,6 +23,11 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: ['user', 'admin'],
     default: 'user'
+  },
+  firebaseUid: {
+    type: String,
+    required: true,
+    unique: true
   },
   createdAt: {
     type: Date,

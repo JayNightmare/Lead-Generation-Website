@@ -5,15 +5,41 @@ exports.register = async (req, res) => {
   try {
     const { email, password, name } = req.body;
 
+    // Validate request body
+    if (!email || !password || !name) {
+      return res.status(400).json({
+        message: 'Please provide email, password, and name'
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        message: 'Please provide a valid email address'
+      });
+    }
+
+    // Validate password length
+    if (password.length < 8) {
+      return res.status(400).json({
+        message: 'Password must be at least 6 characters long'
+      });
+    }
+
+    console.log('Creating Firebase user...');
     // Create user in Firebase
     const firebaseUser = await createFirebaseUser(email, password, name);
+    console.log('Firebase user created:', firebaseUser.uid);
 
+    console.log('Creating MongoDB user...');
     // Create user in MongoDB
     const user = await User.create({
       email,
       name,
       firebaseUid: firebaseUser.uid,
     });
+    console.log('MongoDB user created:', user._id);
 
     res.status(201).json({
       message: 'User registered successfully',
@@ -25,8 +51,28 @@ exports.register = async (req, res) => {
     });
   } catch (error) {
     console.error('Registration error:', error);
+    
+    // Handle specific error cases
+    if (error.code === 'auth/email-already-in-use') {
+      return res.status(400).json({
+        message: 'This email is already registered'
+      });
+    }
+    
+    if (error.code === 'auth/invalid-email') {
+      return res.status(400).json({
+        message: 'Invalid email address'
+      });
+    }
+    
+    if (error.code === 'auth/weak-password') {
+      return res.status(400).json({
+        message: 'Password should be at least 6 characters long'
+      });
+    }
+
     res.status(400).json({
-      message: error.message || 'Failed to register user',
+      message: error.message || 'Failed to register user'
     });
   }
 };
