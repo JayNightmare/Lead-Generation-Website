@@ -1,0 +1,29 @@
+{
+  "name": "lead-gen-app",
+  "version": "1.0.0",
+  "description": "Lead generation platform for recruitment agencies",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install",
+    "build": "cd frontend && npm run build && cd ../backend && npm run build",
+    "start": "cd backend && npm start"
+  },
+  "keywords": [
+    "recruitment",
+    "lead-generation",
+    "nextjs",
+    "express"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  },
+  "dependencies": {
+    "firebase": "^11.5.0",
+    "lead-gen-app": "file:"
+  }
+}
