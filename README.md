@@ -58,4 +58,9 @@ lead-gen-app/
 │   │   ├── types/        # TypeScript types
 │   │   └── utils/        # Utility functions
 └── package.json          # Project configuration
-``` 
+```
+
+## Preview
+![image](https://github.com/user-attachments/assets/4eafb9c1-c384-4146-833a-e2508136e6f3)
+![image](https://github.com/user-attachments/assets/1bdbea9f-4b0e-4113-80d9-4f0e9b82c9fc)
+
